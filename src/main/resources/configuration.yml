@@ -1,0 +1,9 @@
+baseURI: http://official-joke-api.appspot.com
+
+server:
+  applicationConnectors:
+    - type: http
+      port: 8080
+
+jerseyClient:
+  timeout: 3600s
