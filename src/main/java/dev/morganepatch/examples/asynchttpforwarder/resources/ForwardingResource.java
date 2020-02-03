@@ -10,6 +10,7 @@ import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.Invocation;
+import javax.ws.rs.client.InvocationCallback;
 import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.container.AsyncResponse;
 import javax.ws.rs.container.Suspended;
@@ -22,10 +23,8 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 @Path("/forward/{path}")
 public class ForwardingResource {
@@ -75,13 +74,25 @@ public class ForwardingResource {
       }
     }
 
-    executor.execute(() -> {
-      Future<Response> future = builder.async().get();
-      try {
-        response.resume(future.get());
-      } catch (InterruptedException | ExecutionException e) {
-        e.printStackTrace();
-      }
-    });
+    executor.execute(() -> builder.async().get(new ReturnResponseCallback(response)));
+  }
+}
+
+class ReturnResponseCallback implements InvocationCallback<Response> {
+
+  private final AsyncResponse responder;
+
+  public ReturnResponseCallback(AsyncResponse responder) {
+    this.responder = responder;
+  }
+
+  @Override
+  public void completed(Response response) {
+    responder.resume(response);
+  }
+
+  @Override
+  public void failed(Throwable throwable) {
+    throwable.printStackTrace();
   }
 }
