@@ -11,6 +11,8 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.Invocation;
 import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.container.AsyncResponse;
+import javax.ws.rs.container.Suspended;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.Response;
@@ -20,12 +22,17 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 @Path("/forward/{path}")
 public class ForwardingResource {
 
   private final URI baseURL;
   private final Client client;
+  private final Executor executor;
 
   private static final List<String> NO_FORWARD_HEADERS = new ArrayList<>();
   static {
@@ -35,6 +42,7 @@ public class ForwardingResource {
   public ForwardingResource(URI baseURL, Client client) {
     this.baseURL = baseURL;
     this.client = client;
+    executor = Executors.newSingleThreadExecutor();
   }
 
   @GET
@@ -42,9 +50,10 @@ public class ForwardingResource {
   @Metered(name="forward-requests")
   @ExceptionMetered(name="forward-errors")
   @ResponseMetered(name="forward-responses")
-  public Response forwardRequest(@PathParam(value = "path") String path,
-                                 @Context UriInfo uriInfo,
-                                 @Context HttpHeaders headers) {
+  public void forwardRequest(@PathParam(value = "path") String path,
+                             @Context UriInfo uriInfo,
+                             @Context HttpHeaders headers,
+                             final @Suspended AsyncResponse response) {
 
     WebTarget target = client.target(baseURL).path(path);
 
@@ -66,6 +75,13 @@ public class ForwardingResource {
       }
     }
 
-    return builder.get();
+    executor.execute(() -> {
+      Future<Response> future = builder.async().get();
+      try {
+        response.resume(future.get());
+      } catch (InterruptedException | ExecutionException e) {
+        e.printStackTrace();
+      }
+    });
   }
 }
